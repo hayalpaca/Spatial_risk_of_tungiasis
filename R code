@@ -1,0 +1,111 @@
+## library
+library(MapGAM)
+library(maptools)
+library(PBSmapping)
+library(gam)
+library(sf)
+library(rgdal)
+library(tidyverse)
+library(magrittr)
+library(dplyr)
+library(plyr)
+library(car)
+
+## Load data
+KwaleData <- read.csv("./dataset.csv")
+
+## Load base map (ESRI shapefile)
+KwaleMap <- readOGR(dsn = "./shapefile.shp", layer="shapefile")
+st_crs(KwaleMap)
+
+plot(KwaleData$Xcoord, KwaleData$Ycoord, col = KwaleData$Case)
+
+## Create grid
+gamgrid <- predgrid(KwaleData, map = KwaleMap, nrow = 233, ncol = 309)
+
+## Fit crude
+crude <- modgam(Case~lo(Xcoord, Ycoord), 
+                data = KwaleData, rgrid = gamgrid,
+                permute = 1000, pointwise = TRUE)
+
+## Fit adjusted
+## Example of the number of children per household
+Nchil <- modgam(Case~lo(Xcoord, Ycoord)+Nchil, 
+                data = KwaleData, rgrid = gamgrid)
+summary(Nchil)
+colormap(Nchil, KwaleMap, exp = TRUE, contours = "fit", 
+         contours.drawlabels = TRUE, legend.add.line = 1)
+
+## Extract "exp.fit" to assess surface risk change
+crude.df <- data.frame(crude$grid, crude$exp.fit)
+Nchil.df <- data.frame(Nchil$grid, Nchil$exp.fit)
+
+## Merge all variables' exp.fit
+merge <- join_all(list(crude.df, Nchil.df, Nelder.df, Nmale.df,
+                       floor.df, wall.df, roof.df, toilet.df,
+                       ndvi.df, landcover.df, twi.df, elevation_medi.df, 
+                       ph.df, texture.df, occ.df, alm.df, iron.df, distance.df),
+                  by = c("Xcoord", "Ycoord"))
+
+merge <- merge %>%
+         mutate(lower = crude.exp.fit*0.9, upper = crude.exp.fit*1.1)
+head(merge)
+NROW(merge)
+
+## Check if there is a 10% risk change
+## Example of the number of children per household
+merge %>% filter(Nchil.exp.fit > upper) ## risk up by 10%
+merge %>% filter(Nchil.exp.fit < lower) ## risk down by 10%
+merge %>% filter(lower < Nchil.exp.fit & Nchil.exp.fit < upper) ## less than 10% change
+
+## Fit model 1
+model1 <- modgam(Case~lo(Xcoord, Ycoord)+Nchil+Nelder+Nmale+
+                 floor+wall+roof+toilet+
+                 ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron,
+                 data = KwaleData, rgrid = gamgrid,
+                 control = gam.control(bf.maxit = 200),
+                 permute = 1000, pointwise = TRUE)
+
+## Plot the results
+colormap(model1, KwaleMap, contours = "permrank", contours.drawlabels = TRUE, 
+         legend.add.line = 1, contours.lwd = 0.5, legend.name = "Log Odds Ratios")
+
+## Fit model 2
+model2 <- modgam(Case~lo(Xcoord, Ycoord)+Nchil+Nelder+Nmale+
+                 floor+wall+roof+toilet+
+                 ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron+distance,
+                 data = KwaleData, rgrid = gamgrid,
+                 control = gam.control(bf.maxit = 200),
+                 permute = 1000, pointwise = TRUE)
+
+## Fit gam
+model1.gam <- gam(Case~lo(Xcoord, Ycoord, span = 0.1)+
+                  Nchil+Nelder+Nmale+
+                  floor+wall+roof+toilet+
+                  ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron,
+                  data = KwaleData, family = binomial,
+                  control = gam.control(bf.maxit = 200))
+exp(cbind("Odds ratio" = coef(model1.gam), confint.default(model1.gam, level = 0.95)))
+
+model2.gam <- gam(Case~lo(Xcoord, Ycoord, span = 0.15)+
+                  Nchil+Nelder+Nmale+
+                  floor+wall+roof+toilet+
+                  ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron+distance,
+                  data = KwaleData, family = binomial,
+                  control = gam.control(bf.maxit = 200))
+exp(cbind("Odds ratio" = coef(model2.gam), confint.default(model2.gam, level = 0.95)))
+
+## Variance inflation factors
+model1.reduced.gam <- gam(Case~Nchil+Nelder+Nmale+
+                          floor+wall+roof+toilet+
+                          ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron,
+                          data = KwaleData, family = binomial,
+                          control = gam.control(bf.maxit = 200))
+vif(model1.reduced.gam)
+
+model2.reduced.gam <- gam(Case~Nchil+Nelder+Nmale+
+                          floor+wall+roof+toilet+
+                          ndvi+landcover+twi+elevation+ph+texture+occ+alm+iron+distance,
+                          data = KwaleData, family = binomial,
+                          control = gam.control(bf.maxit = 200))
+vif(model2.reduced.gam)
