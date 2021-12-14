@@ -29,7 +29,8 @@ crude <- modgam(Case~lo(Xcoord, Ycoord),
                 permute = 1000, pointwise = TRUE)
 
 ## Fit adjusted
-## Example of the number of children per household
+## This is an example of the number of children per household
+## Repeat for all variables
 Nchil <- modgam(Case~lo(Xcoord, Ycoord)+Nchil, 
                 data = KwaleData, rgrid = gamgrid)
 summary(Nchil)
@@ -53,7 +54,7 @@ head(merge)
 NROW(merge)
 
 ## Check if there is a 10% risk change
-## Example of the number of children per household
+## This is an example of the number of children per household
 merge %>% filter(Nchil.exp.fit > upper) ## risk up by 10%
 merge %>% filter(Nchil.exp.fit < lower) ## risk down by 10%
 merge %>% filter(lower < Nchil.exp.fit & Nchil.exp.fit < upper) ## less than 10% change
